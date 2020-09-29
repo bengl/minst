@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+const lockFile = require(`${process.cwd()}/package-lock.json`);
+const fs = require('fs');
+const { join } = require('path');
+const { tmpdir } = require('os');
+const MakefileMaker = require('./makefile.js');
+
+const args = process.argv.slice(2);
+if (args.includes('-h') || args.includes('--help')) {
+  console.log(`minst v${require('./package.json').version}
+
+A tool to install dependencies from a package-lock.json
+
+Usage:
+  minst [options]
+
+  options:
+    -o, --out    Output Makefile in current directory
+    -h, --help   Display help
+
+  If you do not use the "-o"/"--out" option, minst will write a temporary
+  Makefile, execute "make", and then clean up after itself.
+`);
+  return;
+}
+
+
+const makefileMaker = new MakefileMaker();
+parseDep(lockFile, null, null, makefileMaker);
+const [filename, filedata] = makefileMaker.out();
+if (args.includes('-o') || args.includes('--out')) {
+  fs.writeFileSync(join(process.cwd(), filename), filedata);
+} else {
+  const tempDir = fs.mkdtempSync(join(tmpdir(), 'minst-'));
+  const makefile = join(tempDir, filename);
+  fs.writeFileSync(makefile, filedata);
+  makefileMaker.build(makefile);
+  fs.rmdirSync(tempDir, { recursive: true });
+}
+
+function parseDep(mod, name, dir, maker) {
+  const dest = name ? join(dir, 'node_modules', name) : '';
+  if (name && !mod.bundled) {
+    maker.addEntry(mod, name, dest);
+  }
+  const deps = mod.dependencies;
+  if (deps)
+    for (const name in deps)
+      parseDep(deps[name], name, dest, maker);
+}
