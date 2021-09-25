@@ -3,7 +3,8 @@ const lockFile = require(`${process.cwd()}/package-lock.json`);
 const fs = require('fs');
 const { join } = require('path');
 const { tmpdir } = require('os');
-const MakefileMaker = require('./makefile.js');
+const MakefileMaker = require('./lib/makefile.js');
+const NinjaMaker = require('./lib/ninja.js');
 
 const args = process.argv.slice(2);
 if (args.includes('-h') || args.includes('--help')) {
@@ -15,7 +16,8 @@ Usage:
   minst [options]
 
   options:
-    -o, --out    Output Makefile in current directory
+    -o, --out    Output Makefile (or build.ninja) in current directory
+    -n, --ninja  Use Ninja instead of Make
     -h, --help   Display help
 
   If you do not use the "-o"/"--out" option, minst will write a temporary
@@ -25,23 +27,26 @@ Usage:
 }
 
 
-const makefileMaker = new MakefileMaker();
-parseDep(lockFile, null, null, makefileMaker);
-const [filename, filedata] = makefileMaker.out();
+const MakerClass = args.includes('-n') || args.includes('--ninja') ?
+  NinjaMaker :
+  MakefileMaker;
+const maker = new MakerClass();
+parseDep(lockFile, null, null, maker);
+const [filename, filedata] = maker.out();
 if (args.includes('-o') || args.includes('--out')) {
   fs.writeFileSync(join(process.cwd(), filename), filedata);
 } else {
   const tempDir = fs.mkdtempSync(join(tmpdir(), 'minst-'));
   const makefile = join(tempDir, filename);
   fs.writeFileSync(makefile, filedata);
-  makefileMaker.build(makefile);
+  maker.build(makefile);
   fs.rmdirSync(tempDir, { recursive: true });
 }
 
 function parseDep(mod, name, dir, maker) {
   const dest = name ? join(dir, 'node_modules', name) : '';
   if (name && !mod.bundled) {
-    maker.addEntry(mod, name, dest);
+    maker.addEntry(mod, dest);
   }
   const deps = mod.dependencies;
   if (deps)
